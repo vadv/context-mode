@@ -209,14 +209,21 @@ describe("PRD-v2 section 9: ctx_execute", { concurrency: CONC }, () => {
     }
   });
 
-  test("ctx_execute rejects file paths outside the project (OUTSIDE_ROOT)", async () => {
+  test("ctx_execute passes an existing external file via CTX_FILE and rejects a missing external path", async () => {
     const root = mkdtempSync(join(tmpdir(), "cm-ex4-"));
+    const outside = mkdtempSync(join(tmpdir(), "cm-ex4-outside-"));
     try {
-      const out = await ctxExecute.handler({ language: "shell", code: "cat $CTX_FILE", file: "../../etc/passwd" }, ctxFor(root));
-      assert.equal(out.isError, true);
-      assert.ok(/outside the project/.test(out.text));
+      const file = join(outside, "input.txt");
+      writeFileSync(file, "outside-ok\n");
+      const out = await ctxExecute.handler({ language: "shell", code: 'cat "$CTX_FILE"', file }, ctxFor(root));
+      assert.equal(out.isError, false, out.text);
+      assert.equal(out.text, "outside-ok\n");
+      const missing = await ctxExecute.handler({ language: "shell", code: 'cat "$CTX_FILE"', file: join(outside, "missing.txt") }, ctxFor(root));
+      assert.equal(missing.isError, true);
+      assert.ok(/outside the project/.test(missing.text));
     } finally {
       rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
     }
   });
 

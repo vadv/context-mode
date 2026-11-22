@@ -269,6 +269,8 @@ function inlineHttp(raw: string): boolean {
 // ---------- steps 6, 6a: Read and one-file shell dumps (DECISIONS-r8 VR) ----------
 
 const CD_COMMAND = "cd";
+// Pi Read returns images as attachments, not text; their byte size must not trigger the text-output cap.
+const IMAGE_READ_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
 
 function fileSize(abs: string): number {
   try {
@@ -284,7 +286,7 @@ function read(ev: CanonicalHookEvent, row: AdapterRow, input: Record<string, unk
     for (const p of readPaths(input)) {
       const abs = resolve(ev.cwd, p);
       const size = fileSize(abs);
-      if (size > OUTPUT_CAP) return deny(READ_DENY_MESSAGE(abs, size, row.toolNamePrefix));
+      if (size > OUTPUT_CAP && !IMAGE_READ_RE.test(abs)) return deny(READ_DENY_MESSAGE(abs, size, row.toolNamePrefix));
     }
   }
   return ALLOW; // ranged Read is never denied; no Read hint (D-M7-RR-2)
@@ -307,7 +309,7 @@ function shellDump(cmds: SimpleCommand[], cwd: string, row: AdapterRow): Decisio
     if (d.bounded) { verdict = ALLOW; continue; }
     const abs = resolve(dir, d.file);
     const size = fileSize(abs);
-    if (size > OUTPUT_CAP) return deny(READ_DENY_MESSAGE(abs, size, row.toolNamePrefix));
+    if (size > OUTPUT_CAP && !IMAGE_READ_RE.test(abs)) return deny(READ_DENY_MESSAGE(abs, size, row.toolNamePrefix));
   }
   return verdict;
 }
@@ -318,7 +320,7 @@ function psShellDump(cmd: string, cwd: string, row: AdapterRow): Decision | null
   if (row.nativeTools.read !== undefined && row.nativeTools.read.length > 0 && dumpRunsThenReplaces(row)) return null;
   for (const abs of psDumpFiles(cmd, cwd)) {
     const size = fileSize(abs);
-    if (size > OUTPUT_CAP) return deny(READ_DENY_MESSAGE(abs, size, row.toolNamePrefix));
+    if (size > OUTPUT_CAP && !IMAGE_READ_RE.test(abs)) return deny(READ_DENY_MESSAGE(abs, size, row.toolNamePrefix));
   }
   return null;
 }

@@ -5,7 +5,7 @@
 // selection; nothing is cut and no byte is lost.
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, parse, resolve } from "node:path";
+import { join, parse, resolve } from "node:path";
 import { z } from "zod/v4";
 import {
   BACKGROUND_REPLY_PREFIX, CANCELLED_LINE, EXEC_LANGUAGES, EXEC_PREVIEW_BYTES, EXEC_TIMEOUT_MS, OUTPUT_CAP, SHELL_FAMILY, SOURCE_LABEL_MAX_CHARS,
@@ -85,13 +85,10 @@ function schemaLine(issue: z.core.$ZodIssue): string {
   return issue.message;
 }
 
-// Step 3 (D-M2-T10-5): `resolve` has already removed every "..", and a component that does not exist
-// cannot be a symlink, so the nearest existing ancestor decides containment. A file that does not exist
-// yet inside the project still runs (GP4/deleted-cwd-no-ansi); the code sees CTX_FILE and decides.
+// Existing files may live outside the project (logs, session exports, diagnostics). The executed code can
+// already read absolute paths; CTX_FILE only passes the path. Missing external paths are still rejected.
 function fileError(given: string, abs: string, root: string): string | null {
-  let dir = abs;
-  while (!existsSync(dir) && dirname(dir) !== dir) dir = dirname(dir);
-  if (isInside(root, dir)) return null;
+  if (isInside(root, abs) || existsSync(abs)) return null;
   return new CtxError("OUTSIDE_ROOT", { p: given, root }).toLine();
 }
 

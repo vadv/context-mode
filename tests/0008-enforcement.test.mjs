@@ -516,6 +516,22 @@ describe("ADR-0008 read-deny hook text", { concurrency: CONC }, () => {
     }
   });
 
+  test("pi read: a large image is allowed while a large text file is still denied", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cm-piread-"));
+    try {
+      const image = join(dir, "big.png");
+      const text = join(dir, "big.log");
+      writeFileSync(image, Buffer.alloc(OUTPUT_CAP + 1000));
+      writeFileSync(text, "x".repeat(OUTPUT_CAP + 1000));
+      const row = getAdapter("pi");
+      const ev = (path) => row.decode({ type: "tool_call", toolName: "read", input: { path }, cwd: dir });
+      assert.equal(decide(ev(image), row, null).kind, "allow");
+      assert.equal(decide(ev(text), row, null).kind, "deny");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   // D-DU-DENY-1: the Read deny is one line built from the src/prompt/hooks/read-deny.md template:
   // the exact ctx_execute call for this file, no prose from the tool descriptions. Golden text + byte cap.
 
@@ -664,9 +680,9 @@ describe("ADR-0008 security rules (ported from v1)", { concurrency: CONC }, () =
     assert.equal(decide(ev("Read", { file_path: "/tmp/p/x" }, "/tmp/p"), CC, ["Read(//tmp/.ssh/**)"]).kind, "allow");
   });
 
-  // project-boundary-852: v2 containment is src/core/project/contain.ts isInside (tests/store/contain.test.mjs
-  // covers it); the ctx_execute file argument boundary is checked here end to end.
-  test("[W1-core] #852: ctx_execute file outside the project is refused, inside is allowed (symlink escape too)", async () => {
+  // project-boundary-852: nonexistent paths are still refused. Existing files outside
+  // the project are intentionally allowed: pi commonly reads session logs in ~/.pi.
+  test("[W1-core] #852: ctx_execute accepts existing external files and refuses missing paths", async () => {
     const { ctxExecute } = await import("../src/core/tools/execute.ts");
     const root = realpathSync(mkdtempSync(join(tmpdir(), "cm-852-")));
     const outside = realpathSync(mkdtempSync(join(tmpdir(), "cm-852o-")));
@@ -678,9 +694,10 @@ describe("ADR-0008 security rules (ported from v1)", { concurrency: CONC }, () =
       const ctx = { project: { projectKey: k, projectDir: join(root, "p"), dbPath: join(root, "p", "c.db"), worktree: root, containmentRoot: root, agent: "claude-code", source: "env:CLAUDE_PROJECT_DIR" }, sessionId: "s", turn: 1, signal: new AbortController().signal };
       const run = (file) => ctxExecute.handler({ language: "shell", code: "echo ok", file }, ctx);
       assert.equal((await run("in.txt")).isError, false);
-      assert.equal((await run(join(outside, "out.txt"))).isError, true);
-      assert.equal((await run("../" + outside.split("/").pop() + "/out.txt")).isError, true);
-      assert.equal((await run("link/out.txt")).isError, true);
+      assert.equal((await run(join(outside, "out.txt"))).isError, false);
+      assert.equal((await run("../" + outside.split("/").pop() + "/out.txt")).isError, false);
+      assert.equal((await run("link/out.txt")).isError, false);
+      assert.equal((await run(join(outside, "missing.txt"))).isError, true);
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
